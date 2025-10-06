@@ -8,6 +8,38 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 import random
 
 # --------------------------------------------------------------
+# Simple chasing entity (uses chaser.png)
+# --------------------------------------------------------------
+class Chaser(Entity):
+    """
+    A very small AI that constantly moves toward the player.
+    It is a cube textured with *chaser.png*.
+    """
+    def __init__(self, player, **kwargs):
+        super().__init__(
+            model='cube',
+            texture='chaser.png',          # <-- your sprite
+            collider='box',
+            **kwargs,
+        )
+        self.player = player
+        self.speed = 3.5                 # units per second (tweakable)
+
+    def update(self):
+        # Move only on the X‑Z plane (ignore Y)
+        direction = self.player.position - self.position
+        direction.y = 0
+        if direction.length() > 0.1:          # avoid jitter when on top of player
+            direction = direction.normalized()
+            self.position += direction * self.speed * time.dt
+
+        # “Got you!” – you can replace this with any game‑over logic you like
+        if distance(self.position, self.player.position) < 1.0:
+            print('☠️  Caught!  Game Over')
+            application.quit()
+
+
+# --------------------------------------------------------------
 # Maze generation – recursive backtracker
 # --------------------------------------------------------------
 class Maze:
@@ -20,7 +52,6 @@ class Maze:
              for _ in range(height)] for _ in range(width)
         ]
         self._carve()
-
     def _carve(self):
         stack = []
         sx = random.randint(0, self.width - 1)
@@ -39,7 +70,6 @@ class Maze:
                 stack.append((nx, ny))
             else:
                 stack.pop()
-
     def _unvisited_neighbours(self, x, y):
         dirs = [
             ('N', (x, y + 1)),
@@ -53,6 +83,7 @@ class Maze:
                 if not self.grid[nx][ny]['visited']:
                     result.append((nx, ny, d))
         return result
+
 
 # --------------------------------------------------------------
 # Helper functions for turning the logical maze into 3‑D entities
@@ -109,7 +140,6 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
         collider='box',
         name='floor',
     )
-
     # ---- walls ------------------------------------------------
     processed = set()
     walls = []
@@ -128,7 +158,6 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                 if edge_id in processed:
                     continue
                 processed.add(edge_id)
-
                 pos, scale = wall_transform(x, y, direction,
                                             wall_h, thickness, cell_size)
                 wall = Entity(
@@ -140,7 +169,6 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                     name=f'wall_{x}_{y}_{direction}'
                 )
                 walls.append(wall)
-
     # ---- white corner “posts” (visual depth cue) ---------------
     corner_scale_xy = 0.2
     half_h = wall_h / 2
@@ -155,8 +183,20 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                 name=f'corner_{cx}_{cz}'
             )
             walls.append(corner)
-
     return floor, walls
+
+
+# --------------------------------------------------------------
+# Helper: pick a random spawn cell for the monster
+# --------------------------------------------------------------
+def random_spawn_cell(width, height, exclude, min_dist=4):
+    """Return a random (x, y) cell that is at least *min_dist* cells away from *exclude*."""
+    while True:
+        cx = random.randint(0, width - 1)
+        cy = random.randint(0, height - 1)
+        if (cx, cy) != exclude and (abs(cx - exclude[0]) + abs(cy - exclude[1]) >= min_dist):
+            return cx, cy
+
 
 # --------------------------------------------------------------
 # Main – set up Ursina, create the maze, drop the player, etc.
@@ -168,13 +208,11 @@ def main():
     window.borderless = False
     window.exit_button.visible = True
     window.fps_counter.enabled = True
-
     # ---- tweakable parameters ------------------------------------
     MAZE_W, MAZE_H = 12, 12               # cells horizontally / vertically
     WALL_HEIGHT = 2.5
     WALL_THICKNESS = 0.08                  # optional: slightly thicker walls
-    CELL_SIZE = 2.2                        # <-- larger = wider corridors
-
+    CELL_SIZE = 5.0                        # <-- larger = wider corridors
     # ---- generate maze and build its 3‑D representation ------------
     maze = Maze(MAZE_W, MAZE_H)
     floor, wall_entities = build_3d_maze(
@@ -183,12 +221,10 @@ def main():
         thickness=WALL_THICKNESS,
         cell_size=CELL_SIZE,
     )
-
     # ---- sky & simple lighting (optional but nice) ---------------
     Sky()
     DirectionalLight(y=2, z=3, shadows=True)
     AmbientLight(color=color.rgba(255, 255, 255, 100))
-
     # ---- player ---------------------------------------------------
     player = FirstPersonController(
         position=(MAZE_W // 2 * CELL_SIZE, 2, MAZE_H // 2 * CELL_SIZE),
@@ -196,6 +232,30 @@ def main():
         mouse_sensitivity=(0, 110),   # left/right works, up/down disabled
     )
     player.collider = 'box'
+
+    # ---- spawn the chaser -----------------------------------------
+    # Convert the player's world position to cell coordinates
+    player_cell_x = int(round(player.x / CELL_SIZE))
+    player_cell_y = int(round(player.z / CELL_SIZE))
+
+    # Pick a cell far enough away from the player
+    chaser_cell_x, chaser_cell_y = random_spawn_cell(
+        MAZE_W, MAZE_H,
+        exclude=(player_cell_x, player_cell_y),
+        min_dist=6                     # you can tweak this distance
+    )
+
+    # Create the chasing entity
+    chaser = Chaser(
+        player=player,
+        position=(
+            chaser_cell_x * CELL_SIZE,
+            WALL_HEIGHT * 0.4,                     # raise it a little off the floor
+            chaser_cell_y * CELL_SIZE,
+        ),
+        scale=(CELL_SIZE * 0.6, WALL_HEIGHT * 0.6, CELL_SIZE * 0.6),
+        color=color.red,                         # optional tint
+    )
 
     # ---- help text ------------------------------------------------
     Text(
@@ -206,16 +266,14 @@ def main():
         background=True,
         color=color.white,
     )
-
     # lock mouse cursor for FPS‑style look
     mouse.locked = True
-
     # optional: quit on ESC (Ursina already handles this)
     def input(key):
         if key == 'escape':
             application.quit()
-
     app.run()
+
 
 if __name__ == '__main__':
     main()
