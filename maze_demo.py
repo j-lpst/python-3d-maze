@@ -204,7 +204,7 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
             -0.05,
             (maze.height - 1) * cell_size / 2,
         ),
-        color=color.light_gray,
+        color=color.black,
         texture='white_cube',
         texture_scale=(maze.width, maze.height),
         collider='box',
@@ -232,7 +232,7 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                                             wall_h, thickness, cell_size)
                 wall = Entity(
                     model='cube',
-                    color=color.dark_gray,
+                    color=color.black,
                     scale=scale,
                     position=pos,
                     collider='box',
@@ -334,8 +334,8 @@ def main():
     window.fps_counter.enabled = True
 
     # ---- tweakable parameters ------------------------------------
-    MAZE_W, MAZE_H = 12, 12               # cells horizontally / vertically
-    WALL_HEIGHT = 2.5
+    MAZE_W, MAZE_H = 6, 6               # cells horizontally / vertically
+    WALL_HEIGHT = 5.0
     WALL_THICKNESS = 0.08                  # optional: slightly thicker walls
     CELL_SIZE = 5.0                        # <-- larger = wider corridors
 
@@ -348,10 +348,10 @@ def main():
         cell_size=CELL_SIZE,
     )
 
-    # ---- sky & simple lighting (optional but nice) ---------------
-    Sky()
-    DirectionalLight(y=2, z=3, shadows=True)
-    AmbientLight(color=color.rgba(255, 255, 255, 100))
+    ## ---- sky & simple lighting (optional but nice) ---------------
+    #Sky()
+    #DirectionalLight(y=2, z=3, shadows=True)
+    #AmbientLight(color=color.rgba(255, 255, 255, 100))
 
     # ---- player ---------------------------------------------------
     player = FirstPersonController(
@@ -381,10 +381,10 @@ def main():
         wall_height=WALL_HEIGHT,
         position=(
             chaser_cell_x * CELL_SIZE,
-            WALL_HEIGHT * 0.4,                     # just above the floor
+            2,                     # just above the floor
             chaser_cell_y * CELL_SIZE,
         ),
-        scale=(CELL_SIZE * 0.7, CELL_SIZE * 0.7),   # size of the sprite
+        scale=(CELL_SIZE * 1.0, CELL_SIZE * 1.0),   # size of the sprite
         # optional tint – remove if you want the original colours
         color=color.white,
     )
