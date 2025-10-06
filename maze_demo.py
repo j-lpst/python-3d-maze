@@ -334,7 +334,7 @@ def main():
     window.fps_counter.enabled = True
 
     # ---- tweakable parameters ------------------------------------
-    MAZE_W, MAZE_H = 6, 6               # cells horizontally / vertically
+    MAZE_W, MAZE_H = 12, 12               # cells horizontally / vertically
     WALL_HEIGHT = 5.0
     WALL_THICKNESS = 0.08                  # optional: slightly thicker walls
     CELL_SIZE = 5.0                        # <-- larger = wider corridors
