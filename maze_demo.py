@@ -7,7 +7,7 @@ from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
 from collections import deque          # <-- needed for BFS
 import random
-
+import math                           # for optional exponential curve
 # --------------------------------------------------------------
 # Simple chasing entity (uses chaser.png as a billboard quad)
 # --------------------------------------------------------------
@@ -21,26 +21,62 @@ class Chaser(Entity):
             model='quad',                 # flat 2‑D plane
             texture='chaser.png',         # your sprite file
             billboard=True,               # always faces the camera
-            # ---- use an un‑lit material ----
-            # Option A (recommended):
             unlit=True,                   # <-- automatically picks the un‑lit shader
-            # Option B (equivalent):
-            # lit=False,
             collider='box',
             **kwargs,
         )
+        # --------------------------------------------------------------
+        # Store references & movement parameters
+        # --------------------------------------------------------------
         self.player = player
         self.maze = maze
         self.cell_size = cell_size
         self.wall_height = wall_height
-
         self.speed = 3.0                 # world‑units per second
         self.recalc_interval = 0.2       # seconds between path recalcs
         self._timer = 0
-
-        # Path data
         self._path = []                  # list of (x, y) cells
         self._path_index = 0
+
+        # --------------------------------------------------------------
+        # -----  OPTION A : USE URSINA'S BUILT‑IN 3‑D AUDIO  -------------
+        # --------------------------------------------------------------
+        # (uncomment this block and comment‑out the manual block below
+        #  if you prefer the engine‑handled attenuation)
+        # --------------------------------------------------------------
+        # self.sound = Audio(
+        #     'chaser.mp3',
+        #     loop=True,
+        #     autoplay=False,          # <-- start after we set parameters
+        #     spatial=True,
+        #     min_distance=1.0,        # full volume when ≤1 unit away
+        #     max_distance=30.0,       # silent beyond ~30 units
+        #     attenuation=1.0,
+        #     volume=0.4,               # base loudness (0‑1)
+        # )
+        # self.sound.play()
+
+        # --------------------------------------------------------------
+        # -----  OPTION B : MANUAL VOLUME ATTENUATION  -----------------
+        # --------------------------------------------------------------
+        # If you experienced glitches with `spatial=True` on your platform,
+        # use this block instead (feel free to adjust the numbers).
+        # --------------------------------------------------------------
+        self.sound = Audio(
+            'chaser.mp3',
+            loop=True,
+            autoplay=True,          # start immediately; we’ll modulate volume ourselves
+            spatial=False,          # let us handle attenuation
+            volume=1.0,             # start at full – we’ll scale it down each frame
+        )
+        # Tuning parameters for the manual curve
+        self.max_hear_distance = 30.0   # distance at which the monster is inaudible
+        self.base_volume = 0.6          # volume when the monster is on top of you
+        # self.attenuation_curve = 'linear'   # (optional tag for your own logic)
+
+        # --------------------------------------------------------------
+        # End of sound‑setup
+        # --------------------------------------------------------------
 
     # ------------------------------------------------------------------
     # PUBLIC: called each frame by Ursina
@@ -58,11 +94,10 @@ class Chaser(Entity):
         # 2️⃣  Follow the path (move toward the centre of the next cell)
         # --------------------------------------------------------------
         if self._path:
-            # target cell = the next cell on the path
             target_cell = self._path[self._path_index]
             target_world = Vec3(
                 target_cell[0] * self.cell_size,
-                self.y,                         # keep same height
+                self.y,
                 target_cell[1] * self.cell_size,
             )
             direction = target_world - self.position
@@ -79,8 +114,35 @@ class Chaser(Entity):
         # 3️⃣  “Caught!” – simple distance check (you can replace with any logic)
         # --------------------------------------------------------------
         if distance(self.position, self.player.position) < 0.9:
-            print('☠️  Caught! Game Over')
+            print('☠  Caught! Game Over')
             application.quit()
+
+        # --------------------------------------------------------------
+        # 4️⃣  Keep the sound attached to the monster (required for both modes)
+        # --------------------------------------------------------------
+        # For the built‑in 3‑D mode we *must* keep the sound’s position in sync.
+        # For the manual mode it is only cosmetic (so the Audio entity moves with us).
+        self.sound.position = self.position
+
+        # --------------------------------------------------------------
+        # 5️⃣  Manual attenuation (only runs when spatial=False)
+        # --------------------------------------------------------------
+        if not self.sound.spatial:            # <-- true only in the manual branch
+            d = distance(self.position, self.player.position)
+
+            # --- Linear fade (simple & easy to tweak) -----------------
+            vol = max(0.0,
+                      min(1.0,
+                          (self.max_hear_distance - d) / self.max_hear_distance
+                         )
+                     ) * self.base_volume
+
+            # --- Exponential/fall‑off version (optional, comment‑out linear) ----
+            # vol = self.base_volume * math.exp(- (d / self.max_hear_distance) ** 2)
+
+            self.sound.volume = vol
+            # You can smooth the transition if you like:
+            # self.sound.volume = lerp(self.sound.volume, vol, 0.2)
 
     # ------------------------------------------------------------------
     # PRIVATE: recompute a shortest‑path from us to the player
@@ -98,16 +160,13 @@ class Chaser(Entity):
         if start == goal:
             self._path = []
             return
-
         # ----- BFS that respects the maze walls ------------------------
         self._path = bfs_path(self.maze, start, goal)
-
         # ----- we want to start moving *away* from our current cell -----
         if len(self._path) >= 2:
             self._path_index = 1      # index 0 is our own cell; go to the next one
         else:
             self._path = []           # no path (shouldn’t happen)
-
 
 # --------------------------------------------------------------
 # Maze generation – recursive backtracker
@@ -154,7 +213,6 @@ class Maze:
                     result.append((nx, ny, d))
         return result
 
-
 # --------------------------------------------------------------
 # Helper functions for turning the logical maze into 3‑D entities
 # --------------------------------------------------------------
@@ -172,7 +230,6 @@ def neighbour_coords(x, y, direction, w, h):
     if 0 <= nx < w and 0 <= ny < h:
         return nx, ny
     return None, None
-
 
 def wall_transform(x, y, direction, wall_h, thickness, cell_size):
     half_h = wall_h / 2
@@ -192,7 +249,6 @@ def wall_transform(x, y, direction, wall_h, thickness, cell_size):
         pos = (x * cell_size, half_h, y * cell_size)
         scale = (cell_size, wall_h, cell_size)
     return pos, scale
-
 
 def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
     # ---- floor ------------------------------------------------
@@ -255,7 +311,6 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
             walls.append(corner)
     return floor, walls
 
-
 # --------------------------------------------------------------
 # Path‑finding helpers (BFS) – respect the Maze walls
 # --------------------------------------------------------------
@@ -275,7 +330,6 @@ def get_neighbors(maze, x, y):
                 result.append((nx, ny))
     return result
 
-
 def bfs_path(maze, start, goal):
     """
     Breadth‑first search that returns a list of cells from *start* → *goal*.
@@ -284,10 +338,8 @@ def bfs_path(maze, start, goal):
     """
     if start == goal:
         return [start]
-
     queue = deque([start])
     came_from = {start: None}
-
     while queue:
         cur = queue.popleft()
         if cur == goal:
@@ -296,11 +348,9 @@ def bfs_path(maze, start, goal):
             if nb not in came_from:
                 came_from[nb] = cur
                 queue.append(nb)
-
     # Re‑construct the path
     if goal not in came_from:
         return []                     # no path (shouldn’t happen in a perfect maze)
-
     path = []
     cur = goal
     while cur is not None:
@@ -308,7 +358,6 @@ def bfs_path(maze, start, goal):
         cur = came_from[cur]
     path.reverse()
     return path
-
 
 # --------------------------------------------------------------
 # Helper: pick a random spawn cell for the monster
@@ -321,7 +370,6 @@ def random_spawn_cell(width, height, exclude, min_dist=4):
         if (cx, cy) != exclude and (abs(cx - exclude[0]) + abs(cy - exclude[1]) >= min_dist):
             return cx, cy
 
-
 # --------------------------------------------------------------
 # Main – set up Ursina, create the maze, drop the player, etc.
 # --------------------------------------------------------------
@@ -332,13 +380,11 @@ def main():
     window.borderless = False
     window.exit_button.visible = True
     window.fps_counter.enabled = True
-
     # ---- tweakable parameters ------------------------------------
     MAZE_W, MAZE_H = 12, 12               # cells horizontally / vertically
     WALL_HEIGHT = 5.0
     WALL_THICKNESS = 0.08                  # optional: slightly thicker walls
     CELL_SIZE = 5.0                        # <-- larger = wider corridors
-
     # ---- generate maze and build its 3‑D representation ------------
     maze = Maze(MAZE_W, MAZE_H)
     floor, wall_entities = build_3d_maze(
@@ -347,12 +393,10 @@ def main():
         thickness=WALL_THICKNESS,
         cell_size=CELL_SIZE,
     )
-
     ## ---- sky & simple lighting (optional but nice) ---------------
     #Sky()
     #DirectionalLight(y=2, z=3, shadows=True)
     #AmbientLight(color=color.rgba(255, 255, 255, 100))
-
     # ---- player ---------------------------------------------------
     player = FirstPersonController(
         position=(MAZE_W // 2 * CELL_SIZE, 2, MAZE_H // 2 * CELL_SIZE),
@@ -360,19 +404,16 @@ def main():
         mouse_sensitivity=(0, 110),   # left/right works, up/down disabled
     )
     player.collider = 'box'
-
     # ---- spawn the chaser -----------------------------------------
     # Convert the player's world position to cell coordinates
     player_cell_x = int(round(player.x / CELL_SIZE))
     player_cell_y = int(round(player.z / CELL_SIZE))
-
     # Pick a cell far enough away from the player
     chaser_cell_x, chaser_cell_y = random_spawn_cell(
         MAZE_W, MAZE_H,
         exclude=(player_cell_x, player_cell_y),
         min_dist=6                     # you can tweak this distance
     )
-
     # Create the chasing entity (billboard sprite)
     chaser = Chaser(
         player=player,
@@ -385,10 +426,8 @@ def main():
             chaser_cell_y * CELL_SIZE,
         ),
         scale=(CELL_SIZE * 1.0, CELL_SIZE * 1.0),   # size of the sprite
-        # optional tint – remove if you want the original colours
         color=color.white,
     )
-
     # ---- help text ------------------------------------------------
     Text(
         text='WASD – move | mouse – look (horizontal only) | ESC – quit',
@@ -400,14 +439,11 @@ def main():
     )
     # lock mouse cursor for FPS‑style look
     mouse.locked = True
-
     # optional: quit on ESC (Ursina already handles this)
     def input(key):
         if key == 'escape':
             application.quit()
-
     app.run()
-
 
 if __name__ == '__main__':
     main()
