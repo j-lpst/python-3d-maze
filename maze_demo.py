@@ -113,7 +113,7 @@ class Chaser(Entity):
         # --------------------------------------------------------------
         # 3️⃣  “Caught!” – simple distance check (you can replace with any logic)
         # --------------------------------------------------------------
-        if distance(self.position, self.player.position) < 0.9:
+        if distance(self.position, self.player.position) < 3.0:
             print('☠  Caught! Game Over')
             application.quit()
 
@@ -296,7 +296,7 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                 )
                 walls.append(wall)
     # ---- white corner “posts” (visual depth cue) ---------------
-    corner_scale_xy = 0.2
+    corner_scale_xy = 0.1
     half_h = wall_h / 2
     for cx in range(maze.width + 1):
         for cz in range(maze.height + 1):
