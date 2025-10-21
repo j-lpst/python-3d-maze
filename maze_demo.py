@@ -240,14 +240,11 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
     floor = Entity(
         model='cube',
         scale=(maze.width * cell_size, 0.1, maze.height * cell_size),
-        position=(
-            (maze.width - 1) * cell_size / 2,
-            -0.05,
-            (maze.height - 1) * cell_size / 2,
-        ),
-        color=color.black,
-        texture='white_cube',
-        texture_scale=(maze.width, maze.height),
+        position=((maze.width - 1) * cell_size / 2, -0.05, (maze.height - 1) * cell_size / 2),
+        texture='floor_tile.png',           # <-- your texture here
+        texture_normal='brick_normal.png',
+        color=color.white,                  # keep white so texture shows correctly
+        texture_scale=(maze.width, maze.height),  # repeat texture across the floor
         collider='box',
         name='floor',
     )
@@ -271,29 +268,23 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                 processed.add(edge_id)
                 pos, scale = wall_transform(x, y, direction,
                                             wall_h, thickness, cell_size)
+                # Determine which axes the wall face spans
+                if direction in ('N', 'S'):
+                    tex_scale = (scale[0]/2, scale[1]/2)  # width x height
+                else:  # 'E', 'W'
+                    tex_scale = (scale[2]/2, scale[1]/2)  # depth x height
+
                 wall = Entity(
                     model='cube',
-                    color=color.black,
+                    texture='brick.png',
+                    texture_normal='brick_normal.png',
+                    color=color.white,
                     scale=scale,
                     position=pos,
                     collider='box',
-                    name=f'wall_{x}_{y}_{direction}'
+                    texture_scale=tex_scale
                 )
                 walls.append(wall)
-    # ---- white corner “posts” (visual depth cue) ---------------
-    corner_scale_xy = 0.1
-    half_h = wall_h / 2
-    for cx in range(maze.width + 1):
-        for cz in range(maze.height + 1):
-            corner = Entity(
-                model='cube',
-                color=color.white,
-                scale=(corner_scale_xy, wall_h, corner_scale_xy),
-                position=((cx - 0.5) * cell_size, half_h, (cz - 0.5) * cell_size),
-                collider=None,
-                name=f'corner_{cx}_{cz}'
-            )
-            walls.append(corner)
     return floor, walls
 # --------------------------------------------------------------
 # Path‑finding helpers (BFS) – respect the Maze walls
@@ -374,15 +365,19 @@ def main():
         thickness=WALL_THICKNESS,
         cell_size=CELL_SIZE,
     )
-    ## ---- sky & simple lighting (optional but nice) ---------------
-    #Sky()
-    #DirectionalLight(y=2, z=3, shadows=True)
-    #AmbientLight(color=color.rgba(255, 255, 255, 100))
+    # remove or replace the glowing sky
+    sky = Entity(model='sphere', scale=500, double_sided=True, color=color.rgb(10, 0, 0), unlit=False)
+
+    DirectionalLight(color=color.rgb(60, 20, 20), rotation=(45, -45, 0), shadows=True)
+    AmbientLight(color=color.rgba(30, 0, 0, 40))
+
+    scene.fog_color = color.rgb(10, 0, 0)
+    scene.fog_density = 0.02
     # ---- player ---------------------------------------------------
     player = FirstPersonController(
         position=(MAZE_W // 2 * CELL_SIZE, 2, MAZE_H // 2 * CELL_SIZE),
         speed=5,
-        mouse_sensitivity=(0, 110),   # left/right works, up/down disabled
+        mouse_sensitivity=(100, 100),   # left/right works, up/down enabled
     )
     player.collider = 'box'
     # ---- spawn the chaser -----------------------------------------
@@ -438,3 +433,4 @@ def main():
     app.run()
 if __name__ == '__main__':
     main()
+ 
