@@ -91,9 +91,7 @@ class Chaser(Entity):
             self._timer = 0
             self._recalc_path()
 
-        # --------------------------------------------------------------
         # 2️⃣  Follow the path
-        # --------------------------------------------------------------
         if self._path:
             target_cell = self._path[self._path_index]
             target_world = Vec3(
@@ -103,6 +101,8 @@ class Chaser(Entity):
             )
             direction = target_world - self.position
             dist = direction.length()
+
+            # Move toward next path cell
             if dist < 0.05:
                 if self._path_index < len(self._path) - 1:
                     self._path_index += 1
@@ -111,6 +111,18 @@ class Chaser(Entity):
             else:
                 self.position += direction.normalized() * self.speed * time.dt
 
+        else:
+            # 🚀 NEW: fallback direct chase if line of sight is clear
+            to_player = self.player.position - self.position
+            ray = raycast(
+                self.position,
+                to_player.normalized(),
+                distance=to_player.length(),
+                ignore=(self, self.player),
+                debug=False
+            )
+            if not ray.hit:
+                self.position += to_player.normalized() * self.speed * time.dt
         # --------------------------------------------------------------
         # 3️⃣  Caught check
         # --------------------------------------------------------------
@@ -481,6 +493,14 @@ class PlayerController(FirstPersonController):
             position=(left_anchor_x, self._stamina_bar_y),
             origin=origin
         )
+        # ---- Footstep sounds ---------------------------------------
+        # You can replace 'step_walk.wav' and 'step_run.wav' with your own files.
+        #self.walk_sounds = [Audio('step_walk.wav', autoplay=False) for _ in range(4)]
+        #self.run_sounds  = [Audio('step_run.wav',  autoplay=False) for _ in range(4)]
+        #self._footstep_timer = 0.0
+        #self._footstep_interval_walk = 0.5  # seconds between steps when walking
+        #self._footstep_interval_run  = 0.3  # faster when running
+        #self._last_foot_index = 0
 
         # ensure player starts at walk speed
         self.speed = self.walk_speed
@@ -534,6 +554,31 @@ class PlayerController(FirstPersonController):
             self.stamina_bar.color = color.rgb(255, 180, 0)  # orange-ish
         else:
             self.stamina_bar.color = color.green
+
+        # ---- Footstep sound logic ----------------------------------
+        #velocity = Vec3(self.forward * self.direction.z + self.right * self.direction.x)
+        #moving = velocity.length() > 0.1
+
+        #self._footstep_timer -= time.dt
+        #if self.grounded and moving:
+            # choose interval based on whether running or walking
+            #interval = self._footstep_interval_run if self.speed == self.run_speed else self._footstep_interval_walk
+            #if self._footstep_timer <= 0:
+                # play next footstep sound
+                #if self.speed == self.run_speed:
+                    #sound = random.choice(self.run_sounds)
+                #else:
+                    #sound = random.choice(self.walk_sounds)
+                #sound.pitch = random.uniform(0.9, 1.1)  # small variation
+                #sound.volume = 0.6 if self.speed == self.walk_speed else 1.0
+                #sound.play()
+
+                # reset timer
+                #self._footstep_timer = interval
+        #else:
+            # reset timer if not moving
+            #self._footstep_timer = 0
+
 
 # --------------------------------------------------------------
 # Main – set up Ursina, create the maze, drop the player, etc.
