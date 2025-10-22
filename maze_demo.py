@@ -1,7 +1,6 @@
 # --------------------------------------------------------------
-# Random Maze First‑Person Demo (Ursina 8.2.0)
-# --------------------------------------------------------------
-# pip install ursina
+# Random Maze First-Person Demo (Ursina 8.2.0)
+# Modified: player now contains running/stamina/cooldown & ESC handling
 # --------------------------------------------------------------
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
@@ -11,6 +10,7 @@ import math                           # for optional exponential curve
 import time
 # --------------------------------------------------------------
 # Simple chasing entity (uses chaser.png as a billboard quad)
+# (unchanged)
 # --------------------------------------------------------------
 class Chaser(Entity):
     """
@@ -44,7 +44,7 @@ class Chaser(Entity):
         self.cell_size   = cell_size
         self.wall_height = wall_height
 
-        # Speed‑ramp configuration
+        # Speed-ramp configuration
         self.base_speed      = base_speed
         self.speed_increment = speed_increment
         self.max_speed       = max_speed
@@ -53,7 +53,7 @@ class Chaser(Entity):
         # Remember when the monster was spawned
         self.spawn_time = time.time()          # <-- call!
 
-        # Path‑finding bookkeeping
+        # Path-finding bookkeeping
         self.recalc_interval = 0.2
         self._timer   = 0
         self._path    = []          # list of (x, y) cells
@@ -84,7 +84,7 @@ class Chaser(Entity):
                          self.base_speed + self.speed_increment * elapsed)
 
         # --------------------------------------------------------------
-        # 1️⃣  Re‑calculate a path every few frames
+        # 1️⃣  Re-calculate a path every few frames
         # --------------------------------------------------------------
         self._timer += time.dt
         if self._timer >= self.recalc_interval:
@@ -158,10 +158,10 @@ class Chaser(Entity):
             self._path = []
 
 # --------------------------------------------------------------
-# Maze generation – recursive backtracker
+# Maze generation – recursive backtracker (unchanged)
 # --------------------------------------------------------------
 class Maze:
-    """Rectangular maze built with depth‑first backtracking."""
+    """Rectangular maze built with depth-first backtracking."""
     def __init__(self, width: int, height: int):
         self.width, self.height = width, height
         self.grid = [
@@ -201,8 +201,10 @@ class Maze:
                 if not self.grid[nx][ny]['visited']:
                     result.append((nx, ny, d))
         return result
+
 # --------------------------------------------------------------
-# Helper functions for turning the logical maze into 3‑D entities
+# Helper functions for turning the logical maze into 3-D entities
+# (unchanged)
 # --------------------------------------------------------------
 def neighbour_coords(x, y, direction, w, h):
     if direction == 'N':
@@ -291,7 +293,7 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
     crates = []
     placed_positions = []
 
-    def is_valid_position(x, y, world_pos, min_dist=2.0):
+    def is_valid_position(x, y, world_pos, min_dist=3.0):
         """Check if position is valid (not near wall or another crate)."""
         # 1️⃣ Check distance from other crates
         for pos in placed_positions:
@@ -357,8 +359,9 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
         placed_positions.append(pos)
 
     return crates
+
 # --------------------------------------------------------------
-# Path‑finding helpers (BFS) – respect the Maze walls
+# Path-finding helpers (BFS) – respect the Maze walls (unchanged)
 # --------------------------------------------------------------
 def get_neighbors(maze, x, y):
     """Return a list of neighbour (nx, ny) cells that are reachable from (x, y)."""
@@ -377,7 +380,7 @@ def get_neighbors(maze, x, y):
     return result
 def bfs_path(maze, start, goal):
     """
-    Breadth‑first search that returns a list of cells from *start* → *goal*.
+    Breadth-first search that returns a list of cells from *start* → *goal*.
     The list includes both the start and goal cells.
     If no path exists, an empty list is returned.
     """
@@ -393,7 +396,7 @@ def bfs_path(maze, start, goal):
             if nb not in came_from:
                 came_from[nb] = cur
                 queue.append(nb)
-    # Re‑construct the path
+    # Re-construct the path
     if goal not in came_from:
         return []                     # no path (shouldn’t happen in a perfect maze)
     path = []
@@ -403,8 +406,9 @@ def bfs_path(maze, start, goal):
         cur = came_from[cur]
     path.reverse()
     return path
+
 # --------------------------------------------------------------
-# Helper: pick a random spawn cell for the monster
+# Helper: pick a random spawn cell for the monster (unchanged)
 # --------------------------------------------------------------
 def random_spawn_cell(width, height, exclude, min_dist=4):
     """Return a random (x, y) cell that is at least *min_dist* cells away from *exclude*."""
@@ -413,22 +417,141 @@ def random_spawn_cell(width, height, exclude, min_dist=4):
         cy = random.randint(0, height - 1)
         if (cx, cy) != exclude and (abs(cx - exclude[0]) + abs(cy - exclude[1]) >= min_dist):
             return cx, cy
+
+# --------------------------------------------------------------
+# NEW: PlayerController subclass of FirstPersonController
+# All running, stamina, cooldown and ESC handling lives here.
+# --------------------------------------------------------------
+class PlayerController(FirstPersonController):
+    def __init__(self,
+                 walk_speed=5,
+                 run_multiplier=2.0,
+                 max_stamina=5.0,
+                 stamina_drain_rate=1.0,
+                 stamina_recovery_rate=1.0,
+                 stamina_cooldown=2.0,
+                 stamina_bar_scale=0.4,
+                 stamina_bar_y=-0.45,
+                 *args, **kwargs):
+        # speed passed to super will be set to walk_speed initially
+        super().__init__(speed=walk_speed, *args, **kwargs)
+
+        # speeds
+        self.walk_speed = walk_speed
+        self.run_multiplier = run_multiplier
+        self.run_speed = self.walk_speed * self.run_multiplier
+
+        # stamina mechanics
+        self.max_stamina = max_stamina
+        self.stamina = max_stamina
+        self.stamina_drain_rate = stamina_drain_rate
+        self.stamina_recovery_rate = stamina_recovery_rate
+        self.stamina_cooldown = stamina_cooldown
+
+        # cooldown bookkeeping
+        self.can_run = True
+        self._last_depleted_time = 0.0
+
+        # UI: stamina bar attached to camera.ui
+        self._stamina_bar_width = stamina_bar_scale
+        self._stamina_bar_height = 0.03
+        self._stamina_bar_y = stamina_bar_y
+
+        # Use the same origin for bg and fg so they align.
+        # We'll left-anchor both and position them so the left edge is at (center_x - width/2).
+        left_anchor_x = -self._stamina_bar_width / 2
+        origin = (-0.5, 0.5)
+
+        # background (left anchored)
+        self.stamina_bg = Entity(
+            parent=camera.ui,
+            model='quad',
+            color=color.gray,
+            scale=(self._stamina_bar_width, self._stamina_bar_height),
+            position=(left_anchor_x, self._stamina_bar_y),
+            origin=origin
+        )
+
+        # foreground (left-anchored via origin)
+        self.stamina_bar = Entity(
+            parent=camera.ui,
+            model='quad',
+            color=color.azure,
+            scale=(self._stamina_bar_width, self._stamina_bar_height),
+            position=(left_anchor_x, self._stamina_bar_y),
+            origin=origin
+        )
+
+        # ensure player starts at walk speed
+        self.speed = self.walk_speed
+
+    def input(self, key):
+        # keep default FirstPersonController input behavior
+        super().input(key)
+
+        # ESC handling inside player (your requested place)
+        if key == 'escape':
+            application.quit()
+
+    def update(self):
+        # keep default movement behavior
+        super().update()
+
+        # Running logic — handled inside player instance
+        # Use global held_keys (Ursina)
+        is_holding_shift = held_keys['shift']
+
+        if is_holding_shift and self.stamina > 0 and self.can_run:
+            # run
+            self.speed = self.run_speed
+            self.stamina -= self.stamina_drain_rate * time.dt
+            if self.stamina <= 0:
+                self.stamina = 0
+                self.can_run = False
+                self._last_depleted_time = time.time()
+        else:
+            # walk
+            self.speed = self.walk_speed
+            # check cooldown start/finish
+            if not self.can_run:
+                if (time.time() - self._last_depleted_time) >= self.stamina_cooldown:
+                    self.can_run = True  # allow regen from now on
+            # recover stamina only if allowed
+            if self.can_run and self.stamina < self.max_stamina:
+                self.stamina += self.stamina_recovery_rate * time.dt
+                if self.stamina > self.max_stamina:
+                    self.stamina = self.max_stamina
+
+        # update stamina bar scale.x
+        fill = self.stamina / self.max_stamina if self.max_stamina > 0 else 0
+        # keep full width in X; origin left anchored so scale reduces to the right
+        self.stamina_bar.scale_x = self._stamina_bar_width * fill
+
+        # visual feedback: bar color when empty / low
+        if self.stamina <= 0:
+            self.stamina_bar.color = color.red
+        elif self.stamina < self.max_stamina * 0.25:
+            self.stamina_bar.color = color.rgb(255, 180, 0)  # orange-ish
+        else:
+            self.stamina_bar.color = color.green
+
 # --------------------------------------------------------------
 # Main – set up Ursina, create the maze, drop the player, etc.
+# (mostly unchanged; player replaced by PlayerController)
 # --------------------------------------------------------------
 def main():
     app = Ursina()
-    window.title = 'Random Maze – First‑Person Demo'
+    window.title = 'Random Maze – First-Person Demo'
     window.fullscreen = False
     window.borderless = False
     window.exit_button.visible = True
     window.fps_counter.enabled = True
     # ---- tweakable parameters ------------------------------------
-    MAZE_W, MAZE_H = 12, 12               # cells horizontally / vertically
+    MAZE_W, MAZE_H = 15, 15               # cells horizontally / vertically
     WALL_HEIGHT = 5.0
-    WALL_THICKNESS = 0.08                  # optional: slightly thicker walls
+    WALL_THICKNESS = 0.2                  # optional: slightly thicker walls
     CELL_SIZE = 5.0                        # <-- larger = wider corridors
-    # ---- generate maze and build its 3‑D representation ------------
+    # ---- generate maze and build its 3-D representation ------------
     maze = Maze(MAZE_W, MAZE_H)
     floor, wall_entities = build_3d_maze(
         maze,
@@ -446,12 +569,17 @@ def main():
     AmbientLight(color=color.rgba(30, 0, 0, 40))
 
     scene.fog_color = color.rgb(10, 0, 0)
-    scene.fog_density = 0.02
-    # ---- player ---------------------------------------------------
-    player = FirstPersonController(
+    scene.fog_density = 0.03
+    # ---- player (now using PlayerController) ---------------------
+    player = PlayerController(
         position=(MAZE_W // 2 * CELL_SIZE, 2, MAZE_H // 2 * CELL_SIZE),
-        speed=5,
-        mouse_sensitivity=(100, 100),   # left/right works, up/down enabled
+        walk_speed=5,
+        run_multiplier=2.0,            # run twice as fast
+        max_stamina=5.0,               # seconds of run
+        stamina_drain_rate=1.0,        # per second
+        stamina_recovery_rate=0.5,     # per second
+        stamina_cooldown=2.0,          # seconds before regen after deplete
+        mouse_sensitivity=(100, 100),  # left/right works, up/down enabled
     )
     player.collider = 'box'
     # ---- spawn the chaser -----------------------------------------
@@ -465,22 +593,14 @@ def main():
         min_dist=6                     # you can tweak this distance
     )
     # Create the chasing entity (billboard sprite)
-    # --------------------------------------------------------------
-    # OPTIONAL: tweak the speed‑ramp parameters here:
-    #   base_speed      – starting speed (world‑units per second)
-    #   speed_increment – how many units per second are added each second of survival
-    #   max_speed       – hard cap (set to a very high value if you want “no cap”)
-    # --------------------------------------------------------------
     chaser = Chaser(
         player=player,
         maze=maze,
         cell_size=CELL_SIZE,
         wall_height=WALL_HEIGHT,
-        # ---- uncomment / adjust the three lines below if you want a custom ramp ----
         base_speed=2.0,
         speed_increment=0.25,
         max_speed=999.0,
-        # -------------------------------------------------------------------------
         position=(
             chaser_cell_x * CELL_SIZE,
             2,                     # just above the floor
@@ -491,20 +611,18 @@ def main():
     )
     # ---- help text ------------------------------------------------
     Text(
-        text='WASD – move | mouse – look (horizontal only) | ESC – quit',
+        text='WASD – move | mouse – look (horizontal only) | ESC – quit | Hold Shift – run (stamina)',
         origin=(0, 0),
         position=(-0.85, 0.45),
         scale=1.5,
         background=True,
         color=color.white,
     )
-    # lock mouse cursor for FPS‑style look
+    # lock mouse cursor for FPS-style look
     mouse.locked = True
-    # optional: quit on ESC (Ursina already handles this)
-    def input(key):
-        if key == 'escape':
-            application.quit()
+
+    # NOTE: We no longer define a global input() function for ESC since the player handles it.
     app.run()
+
 if __name__ == '__main__':
     main()
- 
