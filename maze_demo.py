@@ -29,6 +29,7 @@ class Chaser(Entity):
         super().__init__(
             model='quad',
             texture='chaser.png',
+            texture_normal='chaser_normal.png',
             billboard=True,
             unlit=True,
             collider='box',
@@ -286,6 +287,76 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                 )
                 walls.append(wall)
     return floor, walls
+def spawn_random_crates(num_crates, maze, cell_size, wall_height):
+    crates = []
+    placed_positions = []
+
+    def is_valid_position(x, y, world_pos, min_dist=2.0):
+        """Check if position is valid (not near wall or another crate)."""
+        # 1️⃣ Check distance from other crates
+        for pos in placed_positions:
+            if distance(world_pos, pos) < min_dist:
+                return False
+
+        # 2️⃣ Check maze cell — skip if too close to a wall
+        cell = maze.grid[x][y]
+        margin = cell_size * 0.35  # don’t go too close to walls
+        # walls block edges; we only spawn if open enough
+        if cell['walls']['N'] and world_pos.z > y * cell_size + margin:
+            return False
+        if cell['walls']['S'] and world_pos.z < y * cell_size - margin:
+            return False
+        if cell['walls']['E'] and world_pos.x > x * cell_size + margin:
+            return False
+        if cell['walls']['W'] and world_pos.x < x * cell_size - margin:
+            return False
+        return True
+
+    tries = 0
+    while len(crates) < num_crates and tries < num_crates * 10:
+        tries += 1
+
+        # pick a random maze cell
+        x = random.randint(0, maze.width - 1)
+        y = random.randint(0, maze.height - 1)
+
+        # random offset inside that cell
+        offset_x = random.uniform(-cell_size * 0.5, cell_size * 0.5)
+        offset_z = random.uniform(-cell_size * 0.5, cell_size * 0.5)
+
+        # crate properties
+        size = random.uniform(1, 1.8)
+        rot_y = random.uniform(0, 360)
+
+        # compute world position
+        pos = Vec3(x * cell_size + offset_x, size / 2, y * cell_size + offset_z)
+
+        # ✅ skip if position invalid
+        if not is_valid_position(x, y, pos):
+            continue
+
+        crate = Entity(
+            model='cube',
+            texture='crate.png',
+            color=color.white,
+            position=pos,
+            scale=(size, size, size),
+            rotation=(0, rot_y, 0),
+            collider='box',
+            name=f'crate_{x}_{y}'
+        )
+
+        # random color variation
+        crate.color = color.rgb(
+            random.randint(80, 120),
+            random.randint(60, 80),
+            random.randint(40, 60)
+        )
+
+        crates.append(crate)
+        placed_positions.append(pos)
+
+    return crates
 # --------------------------------------------------------------
 # Path‑finding helpers (BFS) – respect the Maze walls
 # --------------------------------------------------------------
@@ -365,6 +436,9 @@ def main():
         thickness=WALL_THICKNESS,
         cell_size=CELL_SIZE,
     )
+    # --- spawn random crates ------------------------------------
+    num_crates = 25  # adjust how many you want
+    crates = spawn_random_crates(num_crates, maze, CELL_SIZE, WALL_HEIGHT)
     # remove or replace the glowing sky
     sky = Entity(model='sphere', scale=500, double_sided=True, color=color.rgb(10, 0, 0), unlit=False)
 
