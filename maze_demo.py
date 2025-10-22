@@ -79,19 +79,22 @@ class Chaser(Entity):
         # --------------------------------------------------------------
         # 0️⃣  Update speed according to survival time
         # --------------------------------------------------------------
-        elapsed = time.time() - self.spawn_time          # <-- call again each frame
+        elapsed = time.time() - self.spawn_time
         self.speed = min(self.max_speed,
                          self.base_speed + self.speed_increment * elapsed)
 
         # --------------------------------------------------------------
-        # 1️⃣  Re-calculate a path every few frames
+        # 1️⃣  Recalculate BFS path occasionally
         # --------------------------------------------------------------
         self._timer += time.dt
         if self._timer >= self.recalc_interval:
             self._timer = 0
             self._recalc_path()
 
-        # 2️⃣  Follow the path
+        # --------------------------------------------------------------
+        # 2️⃣  Follow BFS path if one exists
+        # --------------------------------------------------------------
+        moved = False
         if self._path:
             target_cell = self._path[self._path_index]
             target_world = Vec3(
@@ -102,17 +105,21 @@ class Chaser(Entity):
             direction = target_world - self.position
             dist = direction.length()
 
-            # Move toward next path cell
-            if dist < 0.05:
+            if dist < 0.1:
                 if self._path_index < len(self._path) - 1:
                     self._path_index += 1
                 else:
                     self._path = []
             else:
                 self.position += direction.normalized() * self.speed * time.dt
+                moved = True
 
-        else:
-            # 🚀 NEW: fallback direct chase if line of sight is clear
+        # --------------------------------------------------------------
+        # 3️⃣  Fallback chase when no path or near the player
+        # --------------------------------------------------------------
+        player_dist = distance_2d(self.position, self.player.position)
+        # if no path or player is within one cell radius, go direct
+        if not moved or player_dist < self.cell_size * 1.2:
             to_player = self.player.position - self.position
             ray = raycast(
                 self.position,
@@ -121,30 +128,25 @@ class Chaser(Entity):
                 ignore=(self, self.player),
                 debug=False
             )
-            if not ray.hit:
+            # if we can see the player or already close, move directly
+            if (not ray.hit) or player_dist < 2.5:
                 self.position += to_player.normalized() * self.speed * time.dt
+
         # --------------------------------------------------------------
-        # 3️⃣  Caught check
+        # 4️⃣  “Caught” check
         # --------------------------------------------------------------
         if distance(self.position, self.player.position) < 3.0:
             print('☠  Caught! Game Over')
             application.quit()
 
         # --------------------------------------------------------------
-        # 4️⃣  Keep sound attached to the monster
+        # 5️⃣  Sound & volume attenuation (unchanged)
         # --------------------------------------------------------------
         self.sound.position = self.position
-
-        # --------------------------------------------------------------
-        # 5️⃣  Manual volume attenuation
-        # --------------------------------------------------------------
         if not self.sound.spatial:
             d = distance(self.position, self.player.position)
-            vol = max(0.0,
-                      min(1.0,
-                          (self.max_hear_distance - d) / self.max_hear_distance
-                         )
-                     ) * self.base_volume
+            vol = max(0.0, min(1.0,
+                      (self.max_hear_distance - d) / self.max_hear_distance)) * self.base_volume
             self.sound.volume = vol
 
     # ------------------------------------------------------------------
@@ -419,6 +421,11 @@ def bfs_path(maze, start, goal):
     path.reverse()
     return path
 
+# --------------------------------------------------------------
+# Helper function for chaser to get you in corners
+# --------------------------------------------------------------
+def distance_2d(a, b):
+    return math.sqrt((a.x - b.x)**2 + (a.z - b.z)**2)
 # --------------------------------------------------------------
 # Helper: pick a random spawn cell for the monster (unchanged)
 # --------------------------------------------------------------
