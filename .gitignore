@@ -3,6 +3,7 @@ resources/textures/chaser/*.png
 resources/textures/chaser/*.jpg
 resources/textures/chaser/*.jpeg
 resources/textures/chaser/*.bmp
+resources/textures/chaser/*.gif
 resources/sounds/chaser/*.mp3
 resources/sounds/chaser/*.wav
 resources/sounds/chaser/*.opus
