@@ -76,6 +76,8 @@ class Chaser(Entity):
     # Called every frame by Ursina
     # ------------------------------------------------------------------
     def update(self):
+        if is_paused:
+            return
         # --------------------------------------------------------------
         # 0. Update speed according to survival time
         # --------------------------------------------------------------
@@ -518,9 +520,11 @@ class PlayerController(FirstPersonController):
 
         # ESC handling inside player (your requested place)
         if key == 'escape':
-            application.quit()
+            toggle_pause_menu()
 
     def update(self):
+        if is_paused:
+            return
         # keep default movement behavior
         super().update()
 
@@ -585,8 +589,68 @@ class PlayerController(FirstPersonController):
         #else:
             # reset timer if not moving
             #self._footstep_timer = 0
+# --------------------------------------------------------------
+# Pause menu
+# --------------------------------------------------------------
+is_paused = False
+pause_menu = None
 
+def toggle_pause_menu():
+    global is_paused, pause_menu, chaser
 
+    if not pause_menu:
+        # --- create menu only once ---
+        pause_menu = Entity(parent=camera.ui, enabled=False)
+        # Full-screen black transparent overlay
+        Entity(
+            parent=pause_menu,
+            model='quad',
+            color=color.rgba(0, 0, 0, 0.5),  # mostly black but still see-through
+            scale=(2, 2)
+        )
+        # “Paused” text
+        Text(
+            text='PAUSED',
+            parent=pause_menu,
+            origin=(0, 0),
+            position=(0, 0.15),
+            color=color.rgb(255, 0, 0),   # bright red text
+            scale=3
+        )
+        # Continue button
+        Button(
+            text='CONTINUE',
+            parent=pause_menu,
+            color=color.rgb(100, 0, 0),   # dark red button
+            text_color=color.rgb(0, 0, 0),
+            scale=(0.3, 0.1),
+            position=(0, 0),
+            on_click=lambda: toggle_pause_menu()
+        )
+        # Quit button
+        Button(
+            text='QUIT',
+            parent=pause_menu,
+            color=color.rgb(100, 0, 0),
+            text_color=color.rgb(0, 0, 0),
+            scale=(0.3, 0.1),
+            position=(0, -0.15),
+            on_click=application.quit
+        )
+    # --- toggle on/off ---
+    is_paused = not is_paused
+    pause_menu.enabled = is_paused
+    time.paused = is_paused
+    mouse.locked = not is_paused
+    # --- handle chaser sound ---
+    try:
+        if chaser and hasattr(chaser, 'sound'):
+            if is_paused:
+                chaser.sound.pause()
+            else:
+                chaser.sound.resume()
+    except NameError:
+        pass
 # --------------------------------------------------------------
 # Main – set up Ursina, create the maze, drop the player, etc.
 # (mostly unchanged; player replaced by PlayerController)
