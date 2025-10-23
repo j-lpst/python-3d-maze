@@ -60,14 +60,29 @@ class Chaser(Entity):
         self._path_index = 0
 
         # ------------------------------------------------------------------
-        # Sound – manual attenuation (kept from your original code)
+        # Sound – manual attenuation
         # ------------------------------------------------------------------
+        # Old implementation, causes long sound files to stop after a few seconds due to a bug in the library
+        #self.sound = Audio(
+        #    'resources/sounds/chaser/chaser.mp3',
+        #    loop=True,
+        #    autoplay=True,
+        #    spatial=False,
+        #    volume=1.0,
+        #)
+
+        # stream the file with Panda3D and hand the AudioSound to Ursina
+        clip = loader.loadMusic('resources/sounds/chaser/chaser.mp3')
+        clip.setLoop(True)                 # keep looping
+        # (volume will be overridden later by the distance‑attenuation logic)
+        
         self.sound = Audio(
-            'resources/sounds/chaser/chaser.mp3',
-            loop=True,
+            clip,                          # <-- pass the loaded AudioSound
+            loop=True,                     # keep these flags for consistency
             autoplay=True,
-            spatial=False,
-            volume=1.0,
+            spatial=False,                 # keep 2‑D sound; set to True if you want 3‑D panning
+            volume=1.0,                    # initial volume (overridden by update())
+            auto_destroy=False,            # keep entity alive even if sound stops
         )
         self.max_hear_distance = 30.0
         self.base_volume = 0.6
