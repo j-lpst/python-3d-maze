@@ -8,3 +8,12 @@ resources/sounds/chaser/*.mp3
 resources/sounds/chaser/*.wav
 resources/sounds/chaser/*.opus
 resources/sounds/chaser/*.ogg
+./*.png
+./*.jpg
+./*.jpeg
+./*.bmp
+./*.gif
+./*.mp3
+./*.wav
+./*.opus
+./*.ogg
