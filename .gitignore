@@ -1,6 +1,9 @@
 venv
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.mp3
+resources/textures/chaser/*.png
+resources/textures/chaser/*.jpg
+resources/textures/chaser/*.jpeg
+resources/textures/chaser/*.bmp
+resources/sounds/chaser/*.mp3
+resources/sounds/chaser/*.wav
+resources/sounds/chaser/*.opus
+resources/sounds/chaser/*.ogg

@@ -28,8 +28,8 @@ class Chaser(Entity):
                  **kwargs):
         super().__init__(
             model='quad',
-            texture='chaser.png',
-            texture_normal='chaser_normal.png',
+            texture='resources/textures/chaser/chaser.png',
+            texture_normal='resources/textures/chaser/chaser_normal.png',
             billboard=True,
             unlit=True,
             collider='box',
@@ -63,7 +63,7 @@ class Chaser(Entity):
         # Sound – manual attenuation (kept from your original code)
         # ------------------------------------------------------------------
         self.sound = Audio(
-            'chaser.mp3',
+            'resources/sounds/chaser/chaser.mp3',
             loop=True,
             autoplay=True,
             spatial=False,
@@ -258,8 +258,8 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
         model='cube',
         scale=(maze.width * cell_size, 0.1, maze.height * cell_size),
         position=((maze.width - 1) * cell_size / 2, -0.05, (maze.height - 1) * cell_size / 2),
-        texture='floor_tile.png',           # <-- your texture here
-        texture_normal='brick_normal.png',
+        texture='resources/textures/level/floor_tile.png',           # <-- your texture here
+        texture_normal='resources/textures/level/brick_normal.png',
         color=color.white,                  # keep white so texture shows correctly
         texture_scale=(maze.width, maze.height),  # repeat texture across the floor
         collider='box',
@@ -293,8 +293,8 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
 
                 wall = Entity(
                     model='cube',
-                    texture='brick.png',
-                    texture_normal='brick_normal.png',
+                    texture='resources/textures/level/brick.png',
+                    texture_normal='resources/textures/level/brick_normal.png',
                     color=color.white,
                     scale=scale,
                     position=pos,
@@ -353,7 +353,7 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
 
         crate = Entity(
             model='cube',
-            texture='crate.png',
+            texture='resources/textures/level/crate.png',
             color=color.white,
             position=pos,
             scale=(size, size, size),
