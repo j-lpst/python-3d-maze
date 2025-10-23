@@ -77,14 +77,14 @@ class Chaser(Entity):
     # ------------------------------------------------------------------
     def update(self):
         # --------------------------------------------------------------
-        # 0️⃣  Update speed according to survival time
+        # 0. Update speed according to survival time
         # --------------------------------------------------------------
         elapsed = time.time() - self.spawn_time
         self.speed = min(self.max_speed,
                          self.base_speed + self.speed_increment * elapsed)
 
         # --------------------------------------------------------------
-        # 1️⃣  Recalculate BFS path occasionally
+        # 1. Recalculate BFS path occasionally
         # --------------------------------------------------------------
         self._timer += time.dt
         if self._timer >= self.recalc_interval:
@@ -92,7 +92,7 @@ class Chaser(Entity):
             self._recalc_path()
 
         # --------------------------------------------------------------
-        # 2️⃣  Follow BFS path if one exists
+        # 2. Follow BFS path if one exists
         # --------------------------------------------------------------
         moved = False
         if self._path:
@@ -115,7 +115,7 @@ class Chaser(Entity):
                 moved = True
 
         # --------------------------------------------------------------
-        # 3️⃣  Fallback chase when no path or near the player
+        # 3. Fallback chase when no path or near the player
         # --------------------------------------------------------------
         player_dist = distance_2d(self.position, self.player.position)
         # if no path or player is within one cell radius, go direct
@@ -133,14 +133,14 @@ class Chaser(Entity):
                 self.position += to_player.normalized() * self.speed * time.dt
 
         # --------------------------------------------------------------
-        # 4️⃣  “Caught” check
+        # 4. “Caught” check
         # --------------------------------------------------------------
         if distance(self.position, self.player.position) < 3.0:
             print('☠  Caught! Game Over')
             application.quit()
 
         # --------------------------------------------------------------
-        # 5️⃣  Sound & volume attenuation (unchanged)
+        # 5. Sound & volume attenuation (unchanged)
         # --------------------------------------------------------------
         self.sound.position = self.position
         if not self.sound.spatial:
@@ -309,12 +309,12 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
 
     def is_valid_position(x, y, world_pos, min_dist=3.0):
         """Check if position is valid (not near wall or another crate)."""
-        # 1️⃣ Check distance from other crates
+        # 1. Check distance from other crates
         for pos in placed_positions:
             if distance(world_pos, pos) < min_dist:
                 return False
 
-        # 2️⃣ Check maze cell — skip if too close to a wall
+        # 2. Check maze cell — skip if too close to a wall
         cell = maze.grid[x][y]
         margin = cell_size * 0.35  # don’t go too close to walls
         # walls block edges; we only spawn if open enough
