@@ -690,6 +690,32 @@ def main():
         thickness=WALL_THICKNESS,
         cell_size=CELL_SIZE,
     )
+    
+    # ---- ADD THE CEILING -----------------------------------------
+    # The ceiling is a very thin cube that sits exactly on top of the walls
+    ceiling = Entity(
+        model='cube',
+        # center of the maze in X–Z, Y = WALL_HEIGHT (top of walls)
+        position=Vec3(
+            (MAZE_W - 1) * CELL_SIZE / 2,
+            WALL_HEIGHT,
+            (MAZE_H - 1) * CELL_SIZE / 2,
+        ),
+        # width/length same as floor, 0.1 height (you can tweak thickness)
+        scale=Vec3(
+            MAZE_W * CELL_SIZE,
+            0.1,
+            MAZE_H * CELL_SIZE,
+        ),
+        # your ceiling texture (adjust the path if you store it elsewhere)
+        texture='resources/textures/level/ceiling.png',
+        # repeat the texture so it covers the whole ceiling
+        texture_scale=(MAZE_W, MAZE_H),
+        collider='box',
+        name='ceiling',
+    )
+    # ---- ADD THE CEILING -----------------------------------------
+
     # --- spawn random crates ------------------------------------
     num_crates = 25  # adjust how many you want
     crates = spawn_random_crates(num_crates, maze, CELL_SIZE, WALL_HEIGHT)
@@ -699,7 +725,7 @@ def main():
     DirectionalLight(color=color.rgb(60, 20, 20), rotation=(45, -45, 0), shadows=True)
     AmbientLight(color=color.rgba(30, 0, 0, 40))
 
-    scene.fog_color = color.rgb(10, 0, 0)
+    scene.fog_color = color.rgb(0, 0, 0)
     scene.fog_density = 0.03
     # ---- player (now using PlayerController) ---------------------
     player = PlayerController(
