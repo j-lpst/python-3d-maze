@@ -1,16 +1,14 @@
 # --------------------------------------------------------------
 # Random Maze First-Person Demo (Ursina 8.2.0)
-# Modified: player now contains running/stamina/cooldown & ESC handling
 # --------------------------------------------------------------
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
 from collections import deque          # <-- needed for BFS
 import random
-import math                           # for optional exponential curve
+import math
 import time
 # --------------------------------------------------------------
 # Simple chasing entity (uses chaser.png as a billboard quad)
-# (unchanged)
 # --------------------------------------------------------------
 class Chaser(Entity):
     """
@@ -25,6 +23,7 @@ class Chaser(Entity):
                  base_speed:float = 3.0,
                  speed_increment:float = 0.25,
                  max_speed:float = 12.0,
+                 play_sound:bool = True,
                  **kwargs):
         super().__init__(
             model='quad',
@@ -44,7 +43,7 @@ class Chaser(Entity):
         self.cell_size   = cell_size
         self.wall_height = wall_height
 
-        # Speed-ramp configuration
+        # Speed‑ramp configuration
         self.base_speed      = base_speed
         self.speed_increment = speed_increment
         self.max_speed       = max_speed
@@ -53,7 +52,7 @@ class Chaser(Entity):
         # Remember when the monster was spawned
         self.spawn_time = time.time()          # <-- call!
 
-        # Path-finding bookkeeping
+        # Path‑finding bookkeeping
         self.recalc_interval = 0.2
         self._timer   = 0
         self._path    = []          # list of (x, y) cells
@@ -71,21 +70,24 @@ class Chaser(Entity):
         #    volume=1.0,
         #)
 
+        if play_sound:
         # stream the file with Panda3D and hand the AudioSound to Ursina
-        clip = loader.loadMusic('resources/sounds/chaser/chaser.mp3')
-        clip.setLoop(True)                 # keep looping
+            clip = loader.loadMusic('resources/sounds/chaser/chaser.mp3')
+            clip.setLoop(True)                 # keep looping
         # (volume will be overridden later by the distance‑attenuation logic)
-        
-        self.sound = Audio(
-            clip,                          # <-- pass the loaded AudioSound
-            loop=True,                     # keep these flags for consistency
-            autoplay=True,
-            spatial=False,                 # keep 2‑D sound; set to True if you want 3‑D panning
-            volume=1.0,                    # initial volume (overridden by update())
-            auto_destroy=False,            # keep entity alive even if sound stops
-        )
-        self.max_hear_distance = 30.0
-        self.base_volume = 0.6
+
+            self.sound = Audio(
+                clip,                          # <-- pass the loaded AudioSound
+                loop=True,                     # keep these flags for consistency
+                autoplay=True,
+                spatial=False,                 # keep 2‑D sound; set to True if you want 3‑D panning
+                volume=1.0,                    # initial volume (overridden by update())
+                auto_destroy=False,            # keep entity alive even if sound stops
+            )
+            self.max_hear_distance = 30.0
+            self.base_volume = 0.6
+        else:
+            self.sound = None
 
     # ------------------------------------------------------------------
     # Called every frame by Ursina
@@ -157,17 +159,18 @@ class Chaser(Entity):
             application.quit()
 
         # --------------------------------------------------------------
-        # 5. Sound & volume attenuation (unchanged)
+        # 5. Sound & volume attenuation
         # --------------------------------------------------------------
-        self.sound.position = self.position
-        if not self.sound.spatial:
-            d = distance(self.position, self.player.position)
-            vol = max(0.0, min(1.0,
-                      (self.max_hear_distance - d) / self.max_hear_distance)) * self.base_volume
-            self.sound.volume = vol
+        if self.sound:
+            self.sound.position = self.position
+            if not self.sound.spatial:
+                d = distance(self.position, self.player.position)
+                vol = max(0.0, min(1.0,
+                          (self.max_hear_distance - d) / self.max_hear_distance)) * self.base_volume
+                self.sound.volume = vol
 
     # ------------------------------------------------------------------
-    # Private: recompute shortest path (unchanged)
+    # Private: recompute shortest path
     # ------------------------------------------------------------------
     def _recalc_path(self):
         start = (
@@ -188,11 +191,255 @@ class Chaser(Entity):
         else:
             self._path = []
 
+
+# --------------------------------------------------------------
+# Retreat‑chasing entity
+# --------------------------------------------------------------
+class RetreatChaser(Chaser):
+    """
+    Behaves like the original chaser, but when it touches the player:
+        • the player is frozen for a few seconds,
+        • a “freeze” sound is played,
+        • the monster retreats to the farthest reachable cell at high speed,
+        • its speed‑ramp is reset and it starts chasing again.
+    """
+    def __init__(self,
+                 player,
+                 maze,
+                 cell_size,
+                 wall_height,
+                 base_speed:float = 3.0,
+                 speed_increment:float = 0.25,
+                 max_speed:float = 12.0,
+                 retreat_speed:float = 15.0,
+                 freeze_duration:float = 5.0,
+                 **kwargs):
+        # Disable the normal chase sound for this monster
+        super().__init__(player, maze, cell_size, wall_height,
+                         base_speed, speed_increment, max_speed,
+                         play_sound=False,
+                         **kwargs)
+
+        # ------------------------------------------------------------------
+        # Visual – unique sprite for the second monster
+        # ------------------------------------------------------------------
+        self.texture = 'resources/textures/chaser/chaser2.png'
+        self.texture_normal = 'resources/textures/chaser/chaser_normal.png'
+
+        # ------------------------------------------------------------------
+        # Load the freeze‑sound (one‑shot)
+        # ------------------------------------------------------------------
+        clip = loader.loadSfx('resources/sounds/chaser/freeze.mp3')
+        clip.setLoop(False)
+        self.freeze_sound = Audio(
+            clip,
+            loop=False,
+            autoplay=False,
+            spatial=False,
+            volume=1.0,
+            auto_destroy=False,
+        )
+
+        # ------------------------------------------------------------------
+        # Retreat‑mode bookkeeping
+        # ------------------------------------------------------------------
+        self.retreat_speed = retreat_speed
+        self.freeze_duration = freeze_duration
+        self.state = 'chasing'          # 'chasing' or 'retreating'
+        self.retreat_path = []          # list of (x, y) cells
+        self.retreat_path_index = 0
+
+    # ------------------------------------------------------------------
+    # Helper: find the farthest reachable cell from *origin*
+    # ------------------------------------------------------------------
+    def _find_farthest_cell(self, origin):
+        """BFS from origin, returning the cell with the greatest distance."""
+        visited = set()
+        queue = deque([(origin, 0)])
+        farthest = origin
+        max_dist = 0
+
+        while queue:
+            cell, dist = queue.popleft()
+            if dist > max_dist:
+                farthest, max_dist = cell, dist
+            for nb in get_neighbors(self.maze, *cell):
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append((nb, dist + 1))
+        return farthest
+
+    # ------------------------------------------------------------------
+    # Helper: safe sound‑attenuation (only if a sound exists)
+    # ------------------------------------------------------------------
+    def _update_sound(self):
+        if self.sound:
+            self.sound.position = self.position
+            if not self.sound.spatial:
+                d = distance(self.position, self.player.position)
+                vol = max(0.0, min(1.0,
+                          (self.max_hear_distance - d) / self.max_hear_distance)) * self.base_volume
+                self.sound.volume = vol
+
+    # ------------------------------------------------------------------
+    # State‑transition: switch to retreat mode
+    # ------------------------------------------------------------------
+    def _enter_retreat_mode(self):
+        self.state = 'retreating'
+
+        # 1️⃣  Find the farthest cell *from the player* (so we run away)
+        player_cell = (
+            int(round(self.player.position.x / self.cell_size)),
+            int(round(self.player.position.z / self.cell_size)),
+        )
+        farthest_cell = self._find_farthest_cell(player_cell)
+
+        # 2️⃣  Compute a path from *our* current cell to that farthest cell
+        start_cell = (
+            int(round(self.position.x / self.cell_size)),
+            int(round(self.position.z / self.cell_size)),
+        )
+        self.retreat_path = bfs_path(self.maze, start_cell, farthest_cell)
+
+        # If something went wrong, just abort retreat immediately
+        if len(self.retreat_path) < 2:
+            self.retreat_path = []
+            self.state = 'chasing'
+            self.spawn_time = time.time()          # reset speed‑ramp
+            return
+
+        self.retreat_path_index = 1   # start moving *towards* the second cell
+
+    # ------------------------------------------------------------------
+    # State‑transition: finished retreat → go back to chase
+    # ------------------------------------------------------------------
+    def _exit_retreat_mode(self):
+        self.state = 'chasing'
+        self.spawn_time = time.time()      # reset speed‑ramp
+        # Force a fresh chase‑path on the next frame
+        self._path = []
+        self._path_index = 0
+        self._timer = 0
+
+    # ------------------------------------------------------------------
+    # Overridden update()
+    # ------------------------------------------------------------------
+    def update(self):
+        if is_paused:
+            return
+
+        # --------------------------------------------------------------
+        #  A)  CHASING STATE (behaviour identical to the original Chaser)
+        # --------------------------------------------------------------
+        if self.state == 'chasing':
+            # 0. speed‑ramp
+            elapsed = time.time() - self.spawn_time
+            self.speed = min(self.max_speed,
+                             self.base_speed + self.speed_increment * elapsed)
+
+            # 1. path‑recalculation (same interval as the base class)
+            self._timer += time.dt
+            if self._timer >= self.recalc_interval:
+                self._timer = 0
+                self._recalc_path()
+
+            moved = False
+            if self._path:
+                target_cell = self._path[self._path_index]
+                target_world = Vec3(
+                    target_cell[0] * self.cell_size,
+                    self.y,
+                    target_cell[1] * self.cell_size,
+                )
+                direction = target_world - self.position
+                dist = direction.length()
+
+                if dist < 0.1:
+                    if self._path_index < len(self._path) - 1:
+                        self._path_index += 1
+                    else:
+                        self._path = []
+                else:
+                    self.position += direction.normalized() * self.speed * time.dt
+                    moved = True
+
+            # fallback direct‑to‑player logic
+            player_dist = distance_2d(self.position, self.player.position)
+            if not moved or player_dist < self.cell_size * 1.2:
+                to_player = self.player.position - self.position
+                ray = raycast(
+                    self.position,
+                    to_player.normalized(),
+                    distance=to_player.length(),
+                    ignore=(self, self.player),
+                    debug=False
+                )
+                if (not ray.hit) or player_dist < 2.5:
+                    self.position += to_player.normalized() * self.speed * time.dt
+
+            # ----------------------------------------------------------
+            #  C)  CATCH – freeze player, play sound, start retreat
+            # ----------------------------------------------------------
+            if distance(self.position, self.player.position) < 3.0:
+                # 1. freeze player
+                if hasattr(self.player, 'freeze'):
+                    self.player.freeze(self.freeze_duration)
+
+                # 2. play the freeze‑clip (once)
+                if self.freeze_sound:
+                    self.freeze_sound.play()
+
+                # 3. switch to retreat mode
+                self._enter_retreat_mode()
+                self._update_sound()
+                return
+
+            # sound attenuation (only if a sound exists)
+            self._update_sound()
+            return
+
+        # --------------------------------------------------------------
+        #  B)  RETREATING STATE
+        # --------------------------------------------------------------
+        if self.state == 'retreating':
+            if self.retreat_path:
+                target_cell = self.retreat_path[self.retreat_path_index]
+                target_world = Vec3(
+                    target_cell[0] * self.cell_size,
+                    self.y,
+                    target_cell[1] * self.cell_size,
+                )
+                direction = target_world - self.position
+                dist = direction.length()
+
+                if dist < 0.1:
+                    # reached this waypoint → next one?
+                    if self.retreat_path_index < len(self.retreat_path) - 1:
+                        self.retreat_path_index += 1
+                    else:
+                        # reached farthest cell → go back to chase
+                        self._exit_retreat_mode()
+                        self._update_sound()
+                        return
+                else:
+                    # move *away* at retreat_speed
+                    self.position += direction.normalized() * self.retreat_speed * time.dt
+            else:
+                # no retreat path – just go back to chase
+                self._exit_retreat_mode()
+                self._update_sound()
+                return
+
+            # keep the ambient chaser sound alive while retreating (if any)
+            self._update_sound()
+            return
+
+
 # --------------------------------------------------------------
 # Maze generation – recursive backtracker (unchanged)
 # --------------------------------------------------------------
 class Maze:
-    """Rectangular maze built with depth-first backtracking."""
+    """Rectangular maze built with depth‑first backtracking."""
     def __init__(self, width: int, height: int):
         self.width, self.height = width, height
         self.grid = [
@@ -234,7 +481,7 @@ class Maze:
         return result
 
 # --------------------------------------------------------------
-# Helper functions for turning the logical maze into 3-D entities
+# Helper functions for turning the logical maze into 3‑D entities
 # (unchanged)
 # --------------------------------------------------------------
 def neighbour_coords(x, y, direction, w, h):
@@ -275,10 +522,10 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
         model='cube',
         scale=(maze.width * cell_size, 0.1, maze.height * cell_size),
         position=((maze.width - 1) * cell_size / 2, -0.05, (maze.height - 1) * cell_size / 2),
-        texture='resources/textures/level/floor_tile.png',           # <-- your texture here
+        texture='resources/textures/level/floor_tile.png',
         texture_normal='resources/textures/level/brick_normal.png',
-        color=color.white,                  # keep white so texture shows correctly
-        texture_scale=(maze.width, maze.height),  # repeat texture across the floor
+        color=color.white,                          # keep white so texture shows correctly
+        texture_scale=(maze.width, maze.height),    # repeat texture across the floor
         collider='box',
         name='floor',
     )
@@ -293,7 +540,7 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                     continue
                 nx, ny = neighbour_coords(x, y, direction,
                                           maze.width, maze.height)
-                if nx is None:               # boundary wall
+                if nx is None:  # boundary wall
                     edge_id = (x, y, direction)
                 else:
                     edge_id = tuple(sorted(((x, y), (nx, ny))))
@@ -302,11 +549,10 @@ def build_3d_maze(maze: Maze, wall_h=2.0, thickness=0.1, cell_size=1.0):
                 processed.add(edge_id)
                 pos, scale = wall_transform(x, y, direction,
                                             wall_h, thickness, cell_size)
-                # Determine which axes the wall face spans
                 if direction in ('N', 'S'):
-                    tex_scale = (scale[0]/2, scale[1]/2)  # width x height
-                else:  # 'E', 'W'
-                    tex_scale = (scale[2]/2, scale[1]/2)  # depth x height
+                    tex_scale = (scale[0]/2, scale[1]/2)    # width x height
+                else:
+                    tex_scale = (scale[2]/2, scale[1]/2)    # depth x height
 
                 wall = Entity(
                     model='cube',
@@ -333,8 +579,9 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
 
         # 2. Check maze cell — skip if too close to a wall
         cell = maze.grid[x][y]
-        margin = cell_size * 0.35  # don’t go too close to walls
         # walls block edges; we only spawn if open enough
+        margin = cell_size * 0.35   # don’t go too close to walls
+
         if cell['walls']['N'] and world_pos.z > y * cell_size + margin:
             return False
         if cell['walls']['S'] and world_pos.z < y * cell_size - margin:
@@ -364,7 +611,7 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
         # compute world position
         pos = Vec3(x * cell_size + offset_x, size / 2, y * cell_size + offset_z)
 
-        # ✅ skip if position invalid
+        # skip if position invalid
         if not is_valid_position(x, y, pos):
             continue
 
@@ -392,7 +639,7 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
     return crates
 
 # --------------------------------------------------------------
-# Path-finding helpers (BFS) – respect the Maze walls (unchanged)
+# Path‑finding helpers (BFS) – respect the Maze walls (unchanged)
 # --------------------------------------------------------------
 def get_neighbors(maze, x, y):
     """Return a list of neighbour (nx, ny) cells that are reachable from (x, y)."""
@@ -404,7 +651,7 @@ def get_neighbors(maze, x, y):
     }
     result = []
     for d, (dx, dy) in dirs.items():
-        if not maze.grid[x][y]['walls'][d]:          # wall missing → passage
+        if not maze.grid[x][y]['walls'][d]: # wall missing → passage
             nx, ny = x + dx, y + dy
             if 0 <= nx < maze.width and 0 <= ny < maze.height:
                 result.append((nx, ny))
@@ -429,7 +676,7 @@ def bfs_path(maze, start, goal):
                 queue.append(nb)
     # Re-construct the path
     if goal not in came_from:
-        return []                     # no path (shouldn’t happen in a perfect maze)
+        return []   # no path (shouldn’t happen in a perfect maze)
     path = []
     cur = goal
     while cur is not None:
@@ -443,6 +690,7 @@ def bfs_path(maze, start, goal):
 # --------------------------------------------------------------
 def distance_2d(a, b):
     return math.sqrt((a.x - b.x)**2 + (a.z - b.z)**2)
+
 # --------------------------------------------------------------
 # Helper: pick a random spawn cell for the monster (unchanged)
 # --------------------------------------------------------------
@@ -455,7 +703,7 @@ def random_spawn_cell(width, height, exclude, min_dist=4):
             return cx, cy
 
 # --------------------------------------------------------------
-# NEW: PlayerController subclass of FirstPersonController
+# PlayerController subclass of FirstPersonController
 # All running, stamina, cooldown and ESC handling lives here.
 # --------------------------------------------------------------
 class PlayerController(FirstPersonController):
@@ -493,6 +741,9 @@ class PlayerController(FirstPersonController):
         self._stamina_bar_height = 0.03
         self._stamina_bar_y = stamina_bar_y
 
+        self.is_frozen = False
+        self._freeze_end_time = 0.0
+
         # Use the same origin for bg and fg so they align.
         # We'll left-anchor both and position them so the left edge is at (center_x - width/2).
         left_anchor_x = -self._stamina_bar_width / 2
@@ -517,6 +768,7 @@ class PlayerController(FirstPersonController):
             position=(left_anchor_x, self._stamina_bar_y),
             origin=origin
         )
+
         # ---- Footstep sounds ---------------------------------------
         # You can replace 'step_walk.wav' and 'step_run.wav' with your own files.
         #self.walk_sounds = [Audio('step_walk.wav', autoplay=False) for _ in range(4)]
@@ -529,10 +781,20 @@ class PlayerController(FirstPersonController):
         # ensure player starts at walk speed
         self.speed = self.walk_speed
 
+        # ------------------------------------------------------------------
+        # freeze handling
+        # ------------------------------------------------------------------
+        self.is_frozen = False
+        self._freeze_end_time = 0.0
+
+    def freeze(self, duration: float):
+        """Temporarily disable movement for *duration* seconds."""
+        self.is_frozen = True
+        self._freeze_end_time = time.time() + duration
+
     def input(self, key):
         # keep default FirstPersonController input behavior
         super().input(key)
-
         # ESC handling inside player (your requested place)
         if key == 'escape':
             toggle_pause_menu()
@@ -540,7 +802,17 @@ class PlayerController(FirstPersonController):
     def update(self):
         if is_paused:
             return
-        # keep default movement behavior
+
+        if self.is_frozen:
+            if time.time() >= self._freeze_end_time:
+                self.is_frozen = False
+            else:
+                saved_speed = self.speed
+                self.speed = 0
+                super().update()
+                self.speed = saved_speed
+                return
+
         super().update()
 
         # Running logic — handled inside player instance
@@ -561,8 +833,8 @@ class PlayerController(FirstPersonController):
             # check cooldown start/finish
             if not self.can_run:
                 if (time.time() - self._last_depleted_time) >= self.stamina_cooldown:
-                    self.can_run = True  # allow regen from now on
             # recover stamina only if allowed
+                    self.can_run = True # allow regen from now on
             if self.can_run and self.stamina < self.max_stamina:
                 self.stamina += self.stamina_recovery_rate * time.dt
                 if self.stamina > self.max_stamina:
@@ -577,7 +849,7 @@ class PlayerController(FirstPersonController):
         if self.stamina <= 0:
             self.stamina_bar.color = color.red
         elif self.stamina < self.max_stamina * 0.25:
-            self.stamina_bar.color = color.rgb(255, 180, 0)  # orange-ish
+            self.stamina_bar.color = color.rgb(255, 180, 0) # orange-ish
         else:
             self.stamina_bar.color = color.green
 
@@ -604,6 +876,7 @@ class PlayerController(FirstPersonController):
         #else:
             # reset timer if not moving
             #self._footstep_timer = 0
+
 # --------------------------------------------------------------
 # Pause menu
 # --------------------------------------------------------------
@@ -611,7 +884,7 @@ is_paused = False
 pause_menu = None
 
 def toggle_pause_menu():
-    global is_paused, pause_menu, chaser
+    global is_paused, pause_menu, chaser, retreat_chaser
 
     if not pause_menu:
         # --- create menu only once ---
@@ -620,7 +893,7 @@ def toggle_pause_menu():
         Entity(
             parent=pause_menu,
             model='quad',
-            color=color.rgba(0, 0, 0, 0.5),  # mostly black but still see-through
+            color=color.rgba(0, 0, 0, 0.5), # mostly black but still see-through
             scale=(2, 2)
         )
         # “Paused” text
@@ -629,14 +902,14 @@ def toggle_pause_menu():
             parent=pause_menu,
             origin=(0, 0),
             position=(0, 0.15),
-            color=color.rgb(255, 0, 0),   # bright red text
+            color=color.rgb(255, 0, 0),  # bright red text
             scale=3
         )
         # Continue button
         Button(
             text='CONTINUE',
             parent=pause_menu,
-            color=color.rgb(100, 0, 0),   # dark red button
+            color=color.rgb(100, 0, 0), # dark red button
             text_color=color.rgb(0, 0, 0),
             scale=(0.3, 0.1),
             position=(0, 0),
@@ -658,31 +931,39 @@ def toggle_pause_menu():
     time.paused = is_paused
     mouse.locked = not is_paused
     # --- handle chaser sound ---
-    try:
-        if chaser and hasattr(chaser, 'sound'):
+
+    for c in (chaser, retreat_chaser):
+        if c and getattr(c, 'sound', None):
             if is_paused:
-                chaser.sound.pause()
+                c.sound.pause()
             else:
-                chaser.sound.resume()
-    except NameError:
-        pass
+                c.sound.resume()
+
+# --------------------------------------------------------------
+# Global placeholders for the two chasers
+# --------------------------------------------------------------
+chaser = None
+retreat_chaser = None
+
 # --------------------------------------------------------------
 # Main – set up Ursina, create the maze, drop the player, etc.
 # (mostly unchanged; player replaced by PlayerController)
 # --------------------------------------------------------------
 def main():
+    global chaser, retreat_chaser
     app = Ursina()
     window.title = 'Random Maze – First-Person Demo'
     window.fullscreen = False
     window.borderless = False
     window.exit_button.visible = True
     window.fps_counter.enabled = True
+
     # ---- tweakable parameters ------------------------------------
-    MAZE_W, MAZE_H = 15, 15               # cells horizontally / vertically
+    MAZE_W, MAZE_H = 15, 15     # cells horizontally / vertically
     WALL_HEIGHT = 5.0
-    WALL_THICKNESS = 0.2                  # optional: slightly thicker walls
-    CELL_SIZE = 5.0                        # <-- larger = wider corridors
-    # ---- generate maze and build its 3-D representation ------------
+    WALL_THICKNESS = 0.2        # optional: slightly thicker walls
+    CELL_SIZE = 5.0             # <-- larger = wider corridors
+
     maze = Maze(MAZE_W, MAZE_H)
     floor, wall_entities = build_3d_maze(
         maze,
@@ -690,7 +971,7 @@ def main():
         thickness=WALL_THICKNESS,
         cell_size=CELL_SIZE,
     )
-    
+
     # ---- ADD THE CEILING -----------------------------------------
     # The ceiling is a very thin cube that sits exactly on top of the walls
     ceiling = Entity(
@@ -716,9 +997,9 @@ def main():
     )
     # ---- ADD THE CEILING -----------------------------------------
 
-    # --- spawn random crates ------------------------------------
-    num_crates = 25  # adjust how many you want
+    num_crates = 25 # adjust how many you want
     crates = spawn_random_crates(num_crates, maze, CELL_SIZE, WALL_HEIGHT)
+
     # remove or replace the glowing sky
     sky = Entity(model='sphere', scale=500, double_sided=True, color=color.rgb(10, 0, 0), unlit=False)
 
@@ -727,6 +1008,7 @@ def main():
 
     scene.fog_color = color.rgb(0, 0, 0)
     scene.fog_density = 0.03
+
     # ---- player (now using PlayerController) ---------------------
     player = PlayerController(
         position=(MAZE_W // 2 * CELL_SIZE, 2, MAZE_H // 2 * CELL_SIZE),
@@ -739,7 +1021,8 @@ def main():
         mouse_sensitivity=(100, 100),  # left/right works, up/down enabled
     )
     player.collider = 'box'
-    # ---- spawn the chaser -----------------------------------------
+
+    # ---- spawn the original chaser ---------------------------------
     # Convert the player's world position to cell coordinates
     player_cell_x = int(round(player.x / CELL_SIZE))
     player_cell_y = int(round(player.z / CELL_SIZE))
@@ -747,7 +1030,7 @@ def main():
     chaser_cell_x, chaser_cell_y = random_spawn_cell(
         MAZE_W, MAZE_H,
         exclude=(player_cell_x, player_cell_y),
-        min_dist=6                     # you can tweak this distance
+        min_dist=6  # you can tweak this distance
     )
     # Create the chasing entity (billboard sprite)
     chaser = Chaser(
@@ -760,12 +1043,38 @@ def main():
         max_speed=999.0,
         position=(
             chaser_cell_x * CELL_SIZE,
-            2,                     # just above the floor
+            2,  # just above the floor
             chaser_cell_y * CELL_SIZE,
         ),
         scale=(CELL_SIZE * 1.0, CELL_SIZE * 1.0),   # size of the sprite
         color=color.white,
     )
+
+    # ---- spawn the retreating chaser ---------------------------------
+    chaser2_cell_x, chaser2_cell_y = random_spawn_cell(
+        MAZE_W, MAZE_H,
+        exclude=(player_cell_x, player_cell_y),
+        min_dist=9
+    )
+    retreat_chaser = RetreatChaser(
+        player=player,
+        maze=maze,
+        cell_size=CELL_SIZE,
+        wall_height=WALL_HEIGHT,
+        base_speed=2.0,
+        speed_increment=0.25,
+        max_speed=999.0,
+        retreat_speed=14.0,
+        freeze_duration=5.0,
+        position=(
+            chaser2_cell_x * CELL_SIZE,
+            2,
+            chaser2_cell_y * CELL_SIZE,
+        ),
+        scale=(CELL_SIZE * 1.0, CELL_SIZE * 1.0),
+        color=color.white,
+    )
+
     # ---- help text ------------------------------------------------
     Text(
         text='WASD – move | mouse – look (horizontal only) | ESC – quit | Hold Shift – run (stamina)',
@@ -775,10 +1084,10 @@ def main():
         background=True,
         color=color.white,
     )
-    # lock mouse cursor for FPS-style look
-    mouse.locked = True
 
     # NOTE: We no longer define a global input() function for ESC since the player handles it.
+    # lock mouse cursor for FPS-style look
+    mouse.locked = True
     app.run()
 
 if __name__ == '__main__':
