@@ -412,8 +412,10 @@ class RetreatChaser(Chaser):
                 direction = target_world - self.position
                 dist = direction.length()
 
-                if dist < 0.1:
                     # reached this waypoint → next one?
+                if dist < 0.5:
+                    # Snap to target and proceed to next waypoint
+                    self.position = target_world
                     if self.retreat_path_index < len(self.retreat_path) - 1:
                         self.retreat_path_index += 1
                     else:
