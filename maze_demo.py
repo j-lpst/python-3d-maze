@@ -76,8 +76,9 @@ class Chaser(Entity):
             clip.setLoop(True)                 # keep looping
         # (volume will be overridden later by the distance‑attenuation logic)
 
+            # Use a direct string path so that Ursina loads the sound correctly
             self.sound = Audio(
-                clip,                          # <-- pass the loaded AudioSound
+                'resources/sounds/chaser/chaser.mp3',
                 loop=True,                     # keep these flags for consistency
                 autoplay=True,
                 spatial=False,                 # keep 2‑D sound; set to True if you want 3‑D panning
@@ -86,6 +87,7 @@ class Chaser(Entity):
             )
             self.max_hear_distance = 30.0
             self.base_volume = 0.6
+
         else:
             self.sound = None
 
@@ -939,7 +941,9 @@ def toggle_pause_menu():
             if is_paused:
                 c.sound.pause()
             else:
-                c.sound.resume()
+                # Resume only if the underlying clip exists to avoid AttributeError
+                if getattr(c.sound, 'clip', None) is not None:
+                    c.sound.resume()
 
 # --------------------------------------------------------------
 # Global placeholders for the two chasers
