@@ -20,9 +20,9 @@ class Chaser(Entity):
                  maze,
                  cell_size,
                  wall_height,
-                 base_speed:float = 3.0,
+                 base_speed:float = 2.0,
                  speed_increment:float = 0.25,
-                 max_speed:float = 12.0,
+                 max_speed:float = float('inf'),
                  play_sound:bool = True,
                  **kwargs):
         super().__init__(
@@ -208,10 +208,10 @@ class RetreatChaser(Chaser):
                  maze,
                  cell_size,
                  wall_height,
-                 base_speed:float = 3.0,
-                 speed_increment:float = 0.25,
-                 max_speed:float = 12.0,
-                 retreat_speed:float = 15.0,
+                 base_speed:float = 2.0,
+                 speed_increment:float = 0.50,
+                 max_speed:float = float('inf'),
+                 retreat_speed:float = 30.0,
                  freeze_duration:float = 5.0,
                  **kwargs):
         # Disable the normal chase sound for this monster
@@ -1040,9 +1040,6 @@ def main():
         maze=maze,
         cell_size=CELL_SIZE,
         wall_height=WALL_HEIGHT,
-        base_speed=2.0,
-        speed_increment=0.25,
-        max_speed=999.0,
         position=(
             chaser_cell_x * CELL_SIZE,
             2,  # just above the floor
@@ -1063,11 +1060,6 @@ def main():
         maze=maze,
         cell_size=CELL_SIZE,
         wall_height=WALL_HEIGHT,
-        base_speed=2.0,
-        speed_increment=0.25,
-        max_speed=999.0,
-        retreat_speed=14.0,
-        freeze_duration=5.0,
         position=(
             chaser2_cell_x * CELL_SIZE,
             2,
