@@ -5,6 +5,7 @@ resources/textures/chaser/*.jpeg
 resources/textures/chaser/*.bmp
 resources/textures/chaser/*.gif
 resources/sounds/chaser/*.mp3
+resources/sounds/chaser/*.m4a
 resources/sounds/chaser/*.wav
 resources/sounds/chaser/*.opus
 resources/sounds/chaser/*.ogg
@@ -14,6 +15,7 @@ resources/sounds/chaser/*.ogg
 ./*.bmp
 ./*.gif
 ./*.mp3
+./*.m4a
 ./*.wav
 ./*.opus
 ./*.ogg
