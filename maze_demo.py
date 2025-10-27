@@ -622,19 +622,15 @@ def spawn_random_crates(num_crates, maze, cell_size, wall_height):
         crate = Entity(
             model='cube',
             texture='resources/textures/level/crate.png',
-            color=color.white,
+            texture_normal='resources/textures/level/crate_normal.png',
+            texture_scale=(1, 1),  # One texture per face
+            color=color.white,    # Keep pure white to show texture properly
             position=pos,
             scale=(size, size, size),
             rotation=(0, rot_y, 0),
             collider='box',
-            name=f'crate_{x}_{y}'
-        )
-
-        # random color variation
-        crate.color = color.rgb(
-            random.randint(80, 120),
-            random.randint(60, 80),
-            random.randint(40, 60)
+            name=f'crate_{x}_{y}',
+            unlit=False  # Allow lighting to affect the crate
         )
 
         crates.append(crate)
